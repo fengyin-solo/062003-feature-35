@@ -2,6 +2,7 @@ import { GAME_CONFIG } from '../config/gameConfig'
 import { randInt, randFloat, pickRandom, weightedPick, clamp, pairKey } from './random'
 
 const CFG = GAME_CONFIG
+const LARGE_EXPENSE_THRESHOLD = 5000
 
 export function createInitialGameState() {
   const names = [...CFG.names].sort(() => Math.random() - 0.5)
@@ -15,6 +16,19 @@ export function createInitialGameState() {
     fans: CFG.initial.fans,
     totalRevenue: 0,
     totalExpenses: 0,
+    expenseBreakdown: {
+      training: 0,
+      pr: 0,
+      dailyOperating: 0,
+      singleCreation: 0,
+      poaching: 0,
+      other: 0,
+    },
+    revenueBreakdown: {
+      singleSales: 0,
+      other: 0,
+    },
+    largeExpenses: [],
     trainees,
     groups: [],
     relationships: initRelationships(trainees),
@@ -95,6 +109,70 @@ export function calcProfit(state) {
   return state.totalRevenue - state.totalExpenses
 }
 
+export function calcDailyCostForecast(state) {
+  const trainees = state.trainees
+  return (
+    CFG.dailyCosts.baseOperatingCost +
+    trainees.filter((t) => t.status === 'trainee').length * CFG.dailyCosts.perTraineeCost +
+    trainees.filter((t) => t.status === 'debuted').length * CFG.dailyCosts.perDebutedCost +
+    state.groups.length * CFG.dailyCosts.perGroupCost
+  )
+}
+
+export function calcScheduledActivityCost(state) {
+  const schedule = state.schedule
+  let total = 0
+  for (const activityKey of Object.values(schedule)) {
+    const activity = CFG.activities[activityKey]
+    if (activity) {
+      total += activity.moneyCost
+    }
+  }
+  return total
+}
+
+export function getIncomeExpenseComposition(state) {
+  return {
+    revenue: {
+      total: state.totalRevenue,
+      breakdown: state.revenueBreakdown || { singleSales: state.totalRevenue, other: 0 },
+    },
+    expenses: {
+      total: state.totalExpenses,
+      breakdown: state.expenseBreakdown || {
+        training: 0,
+        pr: 0,
+        dailyOperating: 0,
+        singleCreation: 0,
+        poaching: 0,
+        other: state.totalExpenses,
+      },
+    },
+    profit: calcProfit(state),
+  }
+}
+
+function addExpense(state, category, amount, description, day) {
+  const breakdown = { ...state.expenseBreakdown }
+  breakdown[category] = (breakdown[category] || 0) + amount
+
+  let largeExpenses = state.largeExpenses || []
+  if (amount >= LARGE_EXPENSE_THRESHOLD) {
+    largeExpenses = [
+      ...largeExpenses,
+      { day, amount, description, category, id: Date.now() + Math.random() },
+    ].slice(-20)
+  }
+
+  return { breakdown, largeExpenses }
+}
+
+function addRevenue(state, category, amount) {
+  const breakdown = { ...state.revenueBreakdown }
+  breakdown[category] = (breakdown[category] || 0) + amount
+  return breakdown
+}
+
 export function checkVictory(state) {
   const profit = calcProfit(state)
   const groups = state.groups.length
@@ -141,6 +219,16 @@ export function processDay(state) {
   let money = state.money
   let fans = state.fans
   let totalExpenses = state.totalExpenses
+  let expenseBreakdown = {
+    training: 0,
+    pr: 0,
+    dailyOperating: 0,
+    singleCreation: 0,
+    poaching: 0,
+    other: 0,
+    ...(state.expenseBreakdown || {}),
+  }
+  let largeExpenses = [...(state.largeExpenses || [])]
   const relationships = { ...state.relationships }
   const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
   const schedule = state.schedule
@@ -179,6 +267,21 @@ export function processDay(state) {
 
     money -= activity.moneyCost
     totalExpenses += activity.moneyCost
+
+    if (activity.moneyCost > 0) {
+      const category = activityKey === 'pr' ? 'pr' : activityKey === 'physical' ? 'training' : 'training'
+      expenseBreakdown[category] = (expenseBreakdown[category] || 0) + activity.moneyCost
+      if (activity.moneyCost >= LARGE_EXPENSE_THRESHOLD) {
+        largeExpenses.push({
+          day: state.day,
+          amount: activity.moneyCost,
+          description: `${trainee.name} - ${activity.label}`,
+          category,
+          id: Date.now() + Math.random(),
+        })
+        largeExpenses = largeExpenses.slice(-20)
+      }
+    }
 
     const partners = (activityGroups[activityKey] || [])
       .filter((id) => id !== trainee.id)
@@ -264,6 +367,17 @@ export function processDay(state) {
 
   money -= dailyCost
   totalExpenses += dailyCost
+  expenseBreakdown.dailyOperating = (expenseBreakdown.dailyOperating || 0) + dailyCost
+  if (dailyCost >= LARGE_EXPENSE_THRESHOLD) {
+    largeExpenses.push({
+      day: state.day,
+      amount: dailyCost,
+      description: '每日运营成本',
+      category: 'dailyOperating',
+      id: Date.now() + Math.random(),
+    })
+    largeExpenses = largeExpenses.slice(-20)
+  }
 
   const newDay = state.day + 1
   const pendingRating = state.day % CFG.rating.interval === 0
@@ -317,6 +431,13 @@ export function processDay(state) {
     money,
     fans,
     totalExpenses,
+    expenseBreakdown,
+    largeExpenses,
+    revenueBreakdown: {
+      singleSales: 0,
+      other: 0,
+      ...(state.revenueBreakdown || {}),
+    },
     trainees,
     relationships,
     schedule: {},
@@ -381,6 +502,8 @@ export function resolvePoachingEvent(state, keepTrainee) {
   const logs = [...state.logs]
   const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
   const target = trainees.find((t) => t.id === event.target.id)
+  const expenseBreakdown = { ...state.expenseBreakdown }
+  let largeExpenses = [...(state.largeExpenses || [])]
 
   if (keepTrainee) {
     const cost = randInt(8000, 15000)
@@ -389,10 +512,23 @@ export function resolvePoachingEvent(state, keepTrainee) {
       text: `【挖角危机】你花费 ¥${cost} 成功挽留 ${target.name}！`,
     })
     target.stress = clamp(target.stress + randInt(5, 12), 0, 100)
+    expenseBreakdown.poaching = (expenseBreakdown.poaching || 0) + cost
+    if (cost >= LARGE_EXPENSE_THRESHOLD) {
+      largeExpenses.push({
+        day: state.day,
+        amount: cost,
+        description: `挽留 ${target.name}`,
+        category: 'poaching',
+        id: Date.now() + Math.random(),
+      })
+      largeExpenses = largeExpenses.slice(-20)
+    }
     return {
       ...state,
       money: state.money - cost,
       totalExpenses: state.totalExpenses + cost,
+      expenseBreakdown,
+      largeExpenses,
       trainees,
       logs,
       pendingEvent: null,
@@ -487,6 +623,23 @@ export function releaseSingle(state, groupId) {
     return { success: false, message: '资金不足' }
   }
 
+  const creationCost = CFG.single.creationCost
+  const expenseBreakdown = { ...state.expenseBreakdown }
+  const revenueBreakdown = { ...state.revenueBreakdown }
+  let largeExpenses = [...(state.largeExpenses || [])]
+
+  expenseBreakdown.singleCreation = (expenseBreakdown.singleCreation || 0) + creationCost
+  if (creationCost >= LARGE_EXPENSE_THRESHOLD) {
+    largeExpenses.push({
+      day: state.day,
+      amount: creationCost,
+      description: `${group.name} - 单曲制作`,
+      category: 'singleCreation',
+      id: Date.now() + Math.random(),
+    })
+    largeExpenses = largeExpenses.slice(-20)
+  }
+
   const members = state.trainees.filter((t) => group.memberIds.includes(t.id))
   const statAvg =
     CFG.stats.reduce((s, k) => s + group.avgStats[k], 0) / CFG.stats.length
@@ -502,6 +655,8 @@ export function releaseSingle(state, groupId) {
   )
 
   const revenue = sales * CFG.single.revenuePerSale
+  revenueBreakdown.singleSales = (revenueBreakdown.singleSales || 0) + revenue
+
   const groups = state.groups.map((g) => {
     if (g.id !== groupId) return g
     return {
@@ -531,9 +686,12 @@ export function releaseSingle(state, groupId) {
     success: true,
     state: {
       ...state,
-      money: state.money - CFG.single.creationCost + revenue,
+      money: state.money - creationCost + revenue,
       totalRevenue: state.totalRevenue + revenue,
-      totalExpenses: state.totalExpenses + CFG.single.creationCost,
+      totalExpenses: state.totalExpenses + creationCost,
+      expenseBreakdown,
+      revenueBreakdown,
+      largeExpenses,
       fans: state.fans + Math.round(sales * 0.02),
       groups,
       trainees,

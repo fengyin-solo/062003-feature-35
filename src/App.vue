@@ -18,6 +18,11 @@
     :can-end-day="canEndDay()"
     :rating-results="getRatingResults()"
     :calc-score="calcTraineeScore"
+    :daily-cost-forecast="dailyCostForecast"
+    :scheduled-activity-cost="scheduledActivityCost"
+    :total-daily-cost-forecast="totalDailyCostForecast"
+    :income-expense-composition="incomeExpenseComposition"
+    :large-expenses="largeExpenses"
     @back="backToMenu"
     @toggle-theme="toggleTheme"
     @set-schedule="setSchedule"
@@ -47,6 +52,11 @@ const {
   profit,
   daysLeft,
   activeTrainees,
+  dailyCostForecast,
+  scheduledActivityCost,
+  totalDailyCostForecast,
+  incomeExpenseComposition,
+  largeExpenses,
   startNewGame,
   loadGame,
   setSchedule,

@@ -40,6 +40,15 @@
           :money="state.money"
           @release="(id) => $emit('release-single', id)"
         />
+        <FundsPanel
+          :money="state.money"
+          :profit="profit"
+          :daily-cost-forecast="dailyCostForecast"
+          :scheduled-activity-cost="scheduledActivityCost"
+          :total-daily-cost="totalDailyCostForecast"
+          :composition="incomeExpenseComposition"
+          :large-expenses="largeExpenses"
+        />
         <RelationshipPanel
           :trainees="state.trainees"
           :relationships="state.relationships"
@@ -87,6 +96,7 @@ import SchedulePanel from './SchedulePanel.vue'
 import DayLog from './DayLog.vue'
 import GroupsPanel from './GroupsPanel.vue'
 import RelationshipPanel from './RelationshipPanel.vue'
+import FundsPanel from './FundsPanel.vue'
 import RatingModal from './RatingModal.vue'
 import DebutModal from './DebutModal.vue'
 import EventModal from './EventModal.vue'
@@ -101,6 +111,11 @@ const props = defineProps({
   canEndDay: Boolean,
   ratingResults: Array,
   calcScore: Function,
+  dailyCostForecast: Number,
+  scheduledActivityCost: Number,
+  totalDailyCostForecast: Number,
+  incomeExpenseComposition: Object,
+  largeExpenses: Array,
 })
 
 const emit = defineEmits([

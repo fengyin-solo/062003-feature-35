@@ -10,6 +10,9 @@ import {
   calcProfit,
   calcTraineeScore,
   getRelationship,
+  calcDailyCostForecast,
+  calcScheduledActivityCost,
+  getIncomeExpenseComposition,
 } from '../utils/gameLogic'
 import { saveToSlot } from '../utils/storage'
 
@@ -24,6 +27,26 @@ export function useGame() {
   )
   const activeTrainees = computed(() =>
     state.value ? state.value.trainees.filter((t) => t.status !== 'left') : []
+  )
+
+  const dailyCostForecast = computed(() =>
+    state.value ? calcDailyCostForecast(state.value) : 0
+  )
+
+  const scheduledActivityCost = computed(() =>
+    state.value ? calcScheduledActivityCost(state.value) : 0
+  )
+
+  const incomeExpenseComposition = computed(() =>
+    state.value ? getIncomeExpenseComposition(state.value) : null
+  )
+
+  const totalDailyCostForecast = computed(() =>
+    dailyCostForecast.value + scheduledActivityCost.value
+  )
+
+  const largeExpenses = computed(() =>
+    state.value ? state.value.largeExpenses || [] : []
   )
 
   function startNewGame(slotIndex) {
@@ -119,6 +142,11 @@ export function useGame() {
     profit,
     daysLeft,
     activeTrainees,
+    dailyCostForecast,
+    scheduledActivityCost,
+    totalDailyCostForecast,
+    incomeExpenseComposition,
+    largeExpenses,
     startNewGame,
     loadGame,
     setSchedule,
